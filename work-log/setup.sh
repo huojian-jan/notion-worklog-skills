@@ -34,57 +34,69 @@ echo "[ok] curl and jq found"
 
 # ── Collect configuration values ──────────────────────────────────────────
 echo ""
-echo "── Configuration ──────────────────────────────────────────────────"
+echo "── Notion Pages ────────────────────────────────────────────────────"
+echo ""
+echo "You need two Notion pages:"
+echo "  1. Draft page  — session summaries are auto-written here"
+echo "  2. Log page    — /work-log organizes and writes the formal log here"
+echo ""
+echo "Both pages must be connected to your Notion integration."
+echo "(Page → ··· menu → Connections → select your integration)"
 echo ""
 
-# NOTION_WORKLOG_PAGE_ID
-CURRENT_PAGE_ID="${NOTION_WORKLOG_PAGE_ID:-}"
-if [ -z "$CURRENT_PAGE_ID" ]; then
-  echo "Notion work log page ID (required)."
-  echo "Find it in your Notion page URL: notion.so/your-workspace/<PAGE_ID>"
-  printf "  Page ID: "
-  read -r INPUT_PAGE_ID
-  CURRENT_PAGE_ID="${INPUT_PAGE_ID:-}"
-  if [ -z "$CURRENT_PAGE_ID" ]; then
-    echo "ERROR: Page ID is required. Re-run setup after finding your page ID." >&2
+# Draft page ID
+CURRENT_DRAFT_ID="${NOTION_WORKLOG_DRAFT_PAGE_ID:-}"
+if [ -z "$CURRENT_DRAFT_ID" ]; then
+  printf "  Draft page ID: "
+  read -r INPUT
+  CURRENT_DRAFT_ID="${INPUT:-}"
+  if [ -z "$CURRENT_DRAFT_ID" ]; then
+    echo "ERROR: Draft page ID is required." >&2
     exit 1
   fi
 else
-  echo "[ok] Notion page ID: $CURRENT_PAGE_ID"
+  echo "[ok] Draft page ID: $CURRENT_DRAFT_ID"
 fi
 
-# NOTION_API_VERSION
+# Log page ID
+CURRENT_LOG_ID="${NOTION_WORKLOG_PAGE_ID:-}"
+if [ -z "$CURRENT_LOG_ID" ]; then
+  printf "  Log page ID:   "
+  read -r INPUT
+  CURRENT_LOG_ID="${INPUT:-}"
+  if [ -z "$CURRENT_LOG_ID" ]; then
+    echo "ERROR: Log page ID is required." >&2
+    exit 1
+  fi
+else
+  echo "[ok] Log page ID:   $CURRENT_LOG_ID"
+fi
+
+# Other settings
 CURRENT_API_VER="${NOTION_API_VERSION:-2022-06-28}"
-echo "[ok] Notion API version: $CURRENT_API_VER"
-
-# WORK_LOG_DEFAULT_TEMPLATE
 CURRENT_TEMPLATE="${WORK_LOG_DEFAULT_TEMPLATE:-default}"
-echo "[ok] Default template: $CURRENT_TEMPLATE"
-echo "     Available templates: $(ls "${SKILL_DIR}/templates/" 2>/dev/null | sed 's/\.md//' | tr '\n' ' ')"
-
-# WORK_LOG_SUMMARY_LANGUAGE
 CURRENT_LANG="${WORK_LOG_SUMMARY_LANGUAGE:-zh}"
-echo "[ok] Summary language: $CURRENT_LANG (zh = Chinese, en = English)"
-
-# WORK_LOG_SUMMARY_MODEL
 CURRENT_MODEL="${WORK_LOG_SUMMARY_MODEL:-claude-haiku-4-5-20251001}"
-echo "[ok] Summary model: $CURRENT_MODEL"
-
-# WORK_LOG_MAX_TRANSCRIPT_CHARS
 CURRENT_MAX_CHARS="${WORK_LOG_MAX_TRANSCRIPT_CHARS:-6000}"
-echo "[ok] Max transcript chars: $CURRENT_MAX_CHARS"
 
-echo ""
+echo "[ok] API version:   $CURRENT_API_VER"
+echo "[ok] Template:      $CURRENT_TEMPLATE"
+echo "[ok] Language:      $CURRENT_LANG  (zh=Chinese, en=English)"
+echo "[ok] Model:         $CURRENT_MODEL"
 
 # ── Write config file ──────────────────────────────────────────────────────
+echo ""
 mkdir -p "$CONFIG_DIR"
 cat > "$CONFIG_FILE" <<EOF
 # work-log configuration
 # Edit this file to customize your setup.
-# Secrets (API tokens) should stay in your shell environment, not here.
+# Secrets (NOTION_API_TOKEN, ANTHROPIC_API_KEY) belong in your shell profile, not here.
 
-# Notion page ID for your work log (required)
-NOTION_WORKLOG_PAGE_ID="${CURRENT_PAGE_ID}"
+# Notion page for session draft summaries (auto-written by the SessionEnd hook)
+NOTION_WORKLOG_DRAFT_PAGE_ID="${CURRENT_DRAFT_ID}"
+
+# Notion page for the formal structured work log (written by /work-log)
+NOTION_WORKLOG_PAGE_ID="${CURRENT_LOG_ID}"
 
 # Notion API version
 NOTION_API_VERSION="${CURRENT_API_VER}"
@@ -96,7 +108,7 @@ WORK_LOG_DEFAULT_TEMPLATE="${CURRENT_TEMPLATE}"
 # Language for session summaries: "zh" (Chinese) or "en" (English)
 WORK_LOG_SUMMARY_LANGUAGE="${CURRENT_LANG}"
 
-# Model used to summarize sessions (Claude Haiku recommended — fast and cheap)
+# Model used to summarize sessions
 WORK_LOG_SUMMARY_MODEL="${CURRENT_MODEL}"
 
 # Max characters of session transcript to send for summarization
@@ -164,8 +176,11 @@ fi
 echo ""
 echo "Setup complete!"
 echo ""
-echo "  Sessions will auto-save to Notion when they end."
-echo "  Run /work-log in Claude Code to organize drafts."
-echo "  Edit $CONFIG_FILE to change settings."
+echo "  Draft page: sessions auto-saved here on every session end"
+echo "  Log page:   run /work-log to organize drafts into formal entries"
 echo ""
-echo "  Tip: check ~/.claude/work-log.log to debug hook issues."
+echo "  /work-log           — organize (keeps drafts)"
+echo "  /work-log --clear   — organize + clear draft page"
+echo ""
+echo "  Edit $CONFIG_FILE to change settings."
+echo "  Check ~/.claude/work-log.log to debug hook issues."

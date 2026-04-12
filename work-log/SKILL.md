@@ -1,13 +1,13 @@
 ---
 name: work-log
-description: Auto-sync Claude Code sessions to Notion work log. Reads accumulated session summaries from the draft area, groups by date and category with AI, writes the formal structured log, and clears drafts. No MCP — uses curl only.
-version: 1.1.0
+description: Auto-sync Claude Code sessions to Notion work log. Reads accumulated session summaries from the draft page, groups by date and category with AI, writes the formal structured log to the log page. No MCP — uses curl only.
+version: 1.2.0
 author: huojian-jan
 triggers:
   - /work-log
 ---
 
-You are executing the `/work-log` skill. Read the Notion draft area, organize all session entries using a template, then write the formal log and clear the drafts.
+You are executing the `/work-log` skill. Read the Notion **draft page**, organize all session entries using a template, write the formal log to the **log page**, and optionally clear the drafts.
 
 ---
 
@@ -20,7 +20,8 @@ CONFIG_FILE="${HOME}/.config/work-log/config"
 [ -f "$CONFIG_FILE" ] && source "$CONFIG_FILE"
 
 # Env vars always override config file values
-PAGE_ID="${NOTION_WORKLOG_PAGE_ID:-}"
+DRAFT_PAGE_ID="${NOTION_WORKLOG_DRAFT_PAGE_ID:-}"
+LOG_PAGE_ID="${NOTION_WORKLOG_PAGE_ID:-}"
 NOTION_VER="${NOTION_API_VERSION:-2022-06-28}"
 NOTION_BASE="https://api.notion.com/v1"
 DEFAULT_TEMPLATE="${WORK_LOG_DEFAULT_TEMPLATE:-default}"
@@ -30,15 +31,23 @@ DEFAULT_TEMPLATE="${WORK_LOG_DEFAULT_TEMPLATE:-default}"
 
 Look at the user's message — anything after `/work-log` is the argument string. Parse it:
 
-- If it contains `--template <name>`: extract `<name>` as `TEMPLATE_NAME`; remove the flag from remaining text
-- Everything remaining after removing the flag = `FOCUS_PROMPT`
-- If no `--template` flag: `TEMPLATE_NAME = DEFAULT_TEMPLATE`
+- `--template <name>`: use this template; remove from remaining text
+- `--clear`: clear draft page after writing the log; remove from remaining text
+- Everything remaining = `FOCUS_PROMPT`
+- Defaults: `TEMPLATE_NAME = DEFAULT_TEMPLATE`, `CLEAR_DRAFTS = false`
 
 **Examples:**
-- `/work-log` → `TEMPLATE_NAME=default`, `FOCUS_PROMPT=""`
-- `/work-log 重点记录架构决策` → `TEMPLATE_NAME=default`, `FOCUS_PROMPT="重点记录架构决策"`
-- `/work-log --template minimal` → `TEMPLATE_NAME=minimal`, `FOCUS_PROMPT=""`
-- `/work-log --template minimal 重点 bug 修复` → `TEMPLATE_NAME=minimal`, `FOCUS_PROMPT="重点 bug 修复"`
+- `/work-log` → template=default, focus="", clear=**false**
+- `/work-log --clear` → template=default, focus="", clear=**true**
+- `/work-log 重点记录架构决策` → template=default, focus="重点记录架构决策", clear=false
+- `/work-log 重点记录架构决策 --clear` → template=default, focus="重点记录架构决策", clear=**true**
+- `/work-log --template minimal --clear` → template=minimal, focus="", clear=**true**
+- `/work-log --template minimal 重点 bug 修复 --clear` → template=minimal, focus="重点 bug 修复", clear=**true**
+
+Tell the user at the start:
+- "Using template: **`TEMPLATE_NAME`**"
+- If focus: "Focus: `FOCUS_PROMPT`"
+- "Draft clearing: **on**" or "Draft clearing: **off** (pass `--clear` to clear after organizing)"
 
 ### 0c. Load template
 
@@ -67,24 +76,29 @@ Tell the user: "Using template: **`TEMPLATE_NAME`**" and if `FOCUS_PROMPT` is se
 
 ```bash
 echo "NOTION_API_TOKEN: ${NOTION_API_TOKEN:0:12}..."
-echo "PAGE_ID: ${PAGE_ID:-(not set)}"
+echo "DRAFT_PAGE_ID: ${DRAFT_PAGE_ID:-(not set)}"
+echo "LOG_PAGE_ID:   ${LOG_PAGE_ID:-(not set)}"
 ```
 
 If `NOTION_API_TOKEN` is empty: stop and tell the user to set it.
 
-If `PAGE_ID` is empty: stop and tell the user to either:
+If `DRAFT_PAGE_ID` is empty: stop and tell the user to either:
+- Set `NOTION_WORKLOG_DRAFT_PAGE_ID` in their environment, or
+- Run `~/.agents/skills/work-log/setup.sh` to configure it
+
+If `LOG_PAGE_ID` is empty: stop and tell the user to either:
 - Set `NOTION_WORKLOG_PAGE_ID` in their environment, or
 - Run `~/.agents/skills/work-log/setup.sh` to configure it
 
 ---
 
-## Step 2: Fetch page blocks and find draft callout
+## Step 2: Fetch draft page blocks and find draft callout
 
 ```bash
 curl -s \
   -H "Authorization: Bearer $NOTION_API_TOKEN" \
   -H "Notion-Version: $NOTION_VER" \
-  "$NOTION_BASE/blocks/$PAGE_ID/children?page_size=100"
+  "$NOTION_BASE/blocks/$DRAFT_PAGE_ID/children?page_size=100"
 ```
 
 Find the block where:
@@ -97,7 +111,7 @@ If no such block exists: tell the user "No draft area found. Sessions haven't be
 
 ---
 
-## Step 3: Read all draft entries
+## Step 3: Read all draft entries from the draft page
 
 ```bash
 curl -s \
@@ -146,7 +160,16 @@ For each date also determine:
 
 ## Step 5: Write formal log blocks
 
-Check the page blocks from Step 2 for existing year/month headings.
+First, fetch the log page blocks to check for existing year/month headings:
+
+```bash
+curl -s \
+  -H "Authorization: Bearer $NOTION_API_TOKEN" \
+  -H "Notion-Version: $NOTION_VER" \
+  "$NOTION_BASE/blocks/$LOG_PAGE_ID/children?page_size=100"
+```
+
+Check those blocks for existing year/month headings.
 
 **Follow the loaded template's block structure exactly.** If no template was loaded, use the default format (heading hierarchy + categories + divider + deliverables + summary).
 
@@ -165,7 +188,7 @@ Build the Notion JSON blocks array. Reference for block types:
 {"type":"paragraph","paragraph":{"rich_text":[{"type":"text","text":{"content":"一句话总结..."}}]}}
 ```
 
-Append to the page:
+Append to the log page:
 
 ```bash
 curl -s -X PATCH \
@@ -173,16 +196,20 @@ curl -s -X PATCH \
   -H "Notion-Version: $NOTION_VER" \
   -H "Content-Type: application/json" \
   -d "{\"children\": $BLOCKS_JSON}" \
-  "$NOTION_BASE/blocks/$PAGE_ID/children"
+  "$NOTION_BASE/blocks/$LOG_PAGE_ID/children"
 ```
 
 Check response for `"object":"error"`. If error, report it and **stop** — do not proceed to delete drafts.
 
 ---
 
-## Step 6: Clear drafts
+## Step 6: Clear drafts (conditional)
 
-Delete each child block from the draft callout (IDs from Step 3) one at a time:
+**Only execute this step if `CLEAR_DRAFTS=true` (i.e. `--clear` was passed).**
+
+If `CLEAR_DRAFTS=false`: skip this step entirely and continue to Step 7.
+
+If `CLEAR_DRAFTS=true`: delete each child block from the draft callout (IDs from Step 3) one at a time:
 
 ```bash
 curl -s -X DELETE \
@@ -200,5 +227,6 @@ Do NOT delete the parent draft callout itself — keep the container for future 
 Tell the user:
 - Template used and any focus prompt applied
 - How many sessions were processed and which dates covered
-- How many blocks were written to the formal log
-- Draft area cleared, ready for new sessions
+- How many blocks were written to the formal log page
+- If `CLEAR_DRAFTS=true`: "Draft area cleared — ready for new sessions."
+- If `CLEAR_DRAFTS=false`: "Drafts kept on draft page. Run `/work-log --clear` to clear them after reviewing."
