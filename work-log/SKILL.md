@@ -92,11 +92,12 @@ curl -s \
 
 Collect all child block IDs (needed for cleanup in Step 6).
 
-Parse entries:
-- `paragraph` block with bold text starting with `[YYYY-MM-DD HH:MM]` = session header
-- `bulleted_list_item` blocks after a header = that session's bullets
+Parse entries using the date-grouped structure:
+- `paragraph` block with bold blue text matching `^── \d{4}-\d{2}-\d{2} ──` = date section header → extract the date
+- `paragraph` block with bold text matching `^· \[\d{2}:\d{2}\]` = session header → extract time and project name
+- `bulleted_list_item` blocks after a session header = that session's bullets
 
-Build a structured session list from these blocks.
+Build a structured session list from these blocks, grouping sessions under their date.
 
 ---
 

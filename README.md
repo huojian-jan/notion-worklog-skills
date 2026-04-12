@@ -1,10 +1,18 @@
 # work-log — Claude Code Notion Work Log Skill
 
-> Automatically capture every Claude Code session to a structured Notion work log — no MCP, no API key required by default.
+> Automatically capture every Claude Code session to a structured Notion work log — no MCP, no extra API key required.
 
-**Install:**
+**Local draft mode** (default — sessions saved locally, organized on demand):
 ```bash
 npx skills add huojian-jan/notion-worklog-skills@work-log -g -y
+~/.agents/skills/work-log/setup.sh
+```
+
+**Notion draft mode** (sessions written to Notion instantly after each session):
+```bash
+npx skills add huojian-jan/notion-worklog-skills@work-log -g -y
+~/.agents/skills/work-log/setup.sh
+echo 'export WORK_LOG_DRAFT_TARGET=notion' >> ~/.zshrc && source ~/.zshrc
 ```
 
 [English](#overview) | [中文说明](#概述中文)
@@ -49,25 +57,39 @@ Session ends  →  session-end.sh (async, background)
 npx skills add huojian-jan/notion-worklog-skills@work-log -g -y
 ```
 
-### Step 2 — Run setup
+### Step 2 — Choose your draft mode
+
+#### Mode A: Local Draft (default, recommended)
+
+Sessions are saved locally as `.jsonl` files. Run `/work-log` whenever you want to organize + push to Notion.
 
 ```bash
 ~/.agents/skills/work-log/setup.sh
 ```
 
-The script will:
-- Check for `curl` and `jq`
-- Validate `NOTION_API_TOKEN` (required for `/work-log` to write the formal log)
-- Register the `SessionEnd` hook in `~/.claude/settings.json`
-
-**The only thing you need to do manually:**
-1. Create a Notion integration at [notion.so/my-integrations](https://www.notion.so/my-integrations) and copy the token
-2. Connect the integration to your work log page in Notion (click `···` → Connections)
-
-Then add to `~/.zshrc`:
+Add to `~/.zshrc`:
 ```bash
 export NOTION_API_TOKEN="your_token_here"
 ```
+
+#### Mode B: Notion Draft (instant sync)
+
+Sessions are summarized and written to a Notion draft area automatically after each session ends.
+
+```bash
+~/.agents/skills/work-log/setup.sh
+echo 'export WORK_LOG_DRAFT_TARGET=notion' >> ~/.zshrc && source ~/.zshrc
+```
+
+Add to `~/.zshrc`:
+```bash
+export NOTION_API_TOKEN="your_token_here"
+export WORK_LOG_DRAFT_TARGET=notion
+```
+
+**Both modes require:**
+1. A Notion integration token from [notion.so/my-integrations](https://www.notion.so/my-integrations)
+2. The integration connected to your work log page (click `···` → Connections)
 
 ### Step 3 — Work normally
 

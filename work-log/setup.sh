@@ -109,33 +109,23 @@ echo "valid"
 ok "Integration: '$BOT_NAME'"
 
 # ═══════════════════════════════════════════════════════════════════════════
-# STEP 2 — Anthropic API Key
+# STEP 2 — Draft mode
 # ═══════════════════════════════════════════════════════════════════════════
 echo ""
 hr
-echo "  Step 2 — Anthropic API Key"
+echo "  Step 2 — Draft Mode"
 hr
 echo ""
 
-if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-  info "Needed for Claude Haiku to summarize sessions."
-  info "Get your key at: https://console.anthropic.com/settings/keys"
-  info ""
-  open_url "https://console.anthropic.com/settings/keys"
-  printf "  Paste ANTHROPIC_API_KEY (or press Enter to skip): "
-  read -r ANTHROPIC_API_KEY_INPUT
-  if [ -n "${ANTHROPIC_API_KEY_INPUT:-}" ]; then
-    export ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY_INPUT"
-    _PROMPTED_KEY=true
-    echo ""
-    warn "Key captured for this session only."
-    info "Add to ~/.zshrc: export ANTHROPIC_API_KEY=\"sk-ant-...\""
-    info "Then run: source ~/.zshrc"
-  else
-    warn "Skipped. The SessionEnd hook will not work until ANTHROPIC_API_KEY is set."
-  fi
+DRAFT_TARGET="${WORK_LOG_DRAFT_TARGET:-local}"
+if [ "$DRAFT_TARGET" = "notion" ]; then
+  ok "Draft mode: notion (sessions written to Notion after each session)"
+  info "Make sure WORK_LOG_DRAFT_TARGET=notion is in your ~/.zshrc"
 else
-  ok "ANTHROPIC_API_KEY already set (${ANTHROPIC_API_KEY:0:12}...)"
+  ok "Draft mode: local (default)"
+  info "Sessions saved to ~/.claude/work-log-drafts/. Run /work-log to organize."
+  info "To switch to Notion draft mode later:"
+  info "  echo 'export WORK_LOG_DRAFT_TARGET=notion' >> ~/.zshrc && source ~/.zshrc"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -369,10 +359,9 @@ info "Debug: ~/.claude/work-log.log"
 info "Config: $CONFIG_FILE"
 echo ""
 
-# Remind about shell profile if keys were entered interactively
-if [ "${_PROMPTED_TOKEN:-false}" = "true" ] || [ "${_PROMPTED_KEY:-false}" = "true" ]; then
-  warn "Remember to add API keys to your shell profile so they persist:"
-  [ -z "${NOTION_API_TOKEN:-}" ]   || info "  export NOTION_API_TOKEN=\"${NOTION_API_TOKEN}\""
-  [ -z "${ANTHROPIC_API_KEY:-}" ]  || info "  export ANTHROPIC_API_KEY=\"${ANTHROPIC_API_KEY}\""
+# Remind about shell profile if token was entered interactively
+if [ "${_PROMPTED_TOKEN:-false}" = "true" ]; then
+  warn "Remember to add your token to your shell profile so it persists:"
+  info "  export NOTION_API_TOKEN=\"${NOTION_API_TOKEN}\""
   info "Then: source ~/.zshrc"
 fi
