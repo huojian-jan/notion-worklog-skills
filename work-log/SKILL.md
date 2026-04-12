@@ -1,6 +1,6 @@
 ---
 name: work-log
-description: Organize Notion work log. Reads accumulated session summaries from the Notion draft area, groups by date and category using AI, writes the formal structured log, then clears drafts.
+description: Auto-sync Claude Code sessions to Notion work log. Reads accumulated session summaries from the draft area, groups by date and category with AI, writes the formal structured log, and clears drafts. No MCP — uses curl only.
 version: 1.0.0
 author: huojian-jan
 triggers:

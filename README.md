@@ -1,127 +1,151 @@
-# notion-worklog-skills
+# Claude Code Notion Work Log Skill — work-log
 
-> Auto-sync Claude Code sessions to a structured Notion work log — draft on session end, organize with AI on demand.
+> Automatically sync every Claude Code session to a structured Notion work log. SessionEnd hook drafts bullet summaries; `/work-log` organizes them with AI — no MCP, no manual effort.
 
-[English](#english) | [中文](#中文)
+**Install:** `npx skills add huojian-jan/notion-worklog-skills@work-log -g -y`
+
+[English](#-overview) | [中文说明](#-概述)
 
 ---
 
-## English
+## 📋 Overview
 
-### What it does
+`work-log` is a Claude Code skill with two parts:
 
-**Auto (SessionEnd hook):** Every time a Claude Code session ends, the skill calls Claude Haiku to summarize the session into 3–5 bullet points and appends them to a "草稿区 (Draft)" callout block on your Notion page. Zero friction — you never have to think about it.
-
-**Manual (`/work-log`):** When you run `/work-log`, Claude reads all accumulated draft entries, groups them by date and topic category, writes a structured daily log, and clears the drafts.
+| Part | Trigger | What happens |
+|------|---------|-------------|
+| **SessionEnd hook** | Automatic — every session end | Claude Haiku summarizes the session into 3–5 bullets and appends them to a Notion draft callout |
+| **`/work-log` command** | Manual — you run it | Claude reads all drafts, groups by date + category, writes the formal log, clears drafts |
 
 ```
-Session ends  →  session-end.sh  →  Notion draft area (auto)
+Session ends  →  session-end.sh  →  Notion draft area  (automatic)
 /work-log     →  Claude reads drafts
               →  AI groups by date + category
-              →  Writes formal log to Notion
+              →  Writes to formal Notion log
               →  Clears draft area
 ```
 
 ### Why this skill?
 
-| Skill | Auto-capture | AI organize | Notion | No MCP needed |
-|-------|-------------|-------------|--------|---------------|
+| Skill | Auto-capture | AI organize | Writes to Notion | No MCP needed |
+|-------|-------------|-------------|-----------------|---------------|
 | session-log (michalparkola) | Yes | No | No | Yes |
 | notion-knowledge-capture | No | No | Yes | No |
 | **work-log (this)** | **Yes** | **Yes** | **Yes** | **Yes** |
 
-This is the only skill combining automatic session capture + AI-powered organization + direct Notion writes (via `curl`, no MCP dependency).
+The only Claude Code skill that combines automatic session capture + AI-powered organization + direct Notion writes (via `curl` and `jq`, no MCP).
 
-### Install
+---
+
+## 🚀 Quick Start
+
+### 1. Install
 
 ```bash
 npx skills add huojian-jan/notion-worklog-skills@work-log -g -y
 ```
 
-Then run setup once to register the SessionEnd hook:
+### 2. Set environment variables
+
+```bash
+# Add to ~/.zshrc or ~/.bashrc
+export NOTION_API_TOKEN="secret_..."          # Notion integration token (required)
+export ANTHROPIC_API_KEY="sk-ant-..."         # For session summarization (required)
+export NOTION_WORKLOG_PAGE_ID="your-page-id"  # Your Notion page ID (optional)
+```
+
+### 3. Register the hook
 
 ```bash
 ~/.claude/skills/work-log/setup.sh
 ```
 
-### Requirements
+That's it. Sessions now auto-save to Notion.
 
-- `curl` and `jq` (standard on macOS/Linux)
-- [Notion integration token](https://www.notion.so/my-integrations) with access to your work log page
-- `ANTHROPIC_API_KEY` for session summarization (Claude Haiku)
+---
 
-### Environment variables
+## 📝 Output Format
 
-Add to `~/.zshrc` or `~/.bashrc`:
-
-```bash
-export NOTION_API_TOKEN="secret_..."          # Required: Notion integration token
-export ANTHROPIC_API_KEY="sk-ant-..."         # Required: for session summarization
-export NOTION_WORKLOG_PAGE_ID="your-page-id"  # Optional: defaults to a built-in page
-```
-
-### Draft area (auto-written each session)
+### Draft area (written automatically after each session)
 
 ```
 📝 草稿区（待整理）
 
 [2026-04-12 14:30] · notion-worklog-skills
 · Implemented SessionEnd hook for automatic Notion draft writes
-· Completed /work-log skill organize logic with AI categorization
-· Published to skills.sh marketplace
+· Completed /work-log AI categorization logic
+· Published skill to marketplace
 
 [2026-04-12 16:00] · blog_source
-· Fixed category page rendering issue in Hexo blog
-· Updated CLAUDE.md with skill routing configuration
+· Fixed Hexo category page rendering
+· Updated CLAUDE.md skill routing config
 ```
 
-### Formal log (written by `/work-log`)
+### Formal work log (written by `/work-log`)
 
 ```
 # 2026年
 ## 4月
-### 第二周（4月7日 - 4月13日）
+### Week 2 (Apr 7 – Apr 13)
 
-**4月12日 周六**
+**April 12, Saturday**
 
 **Notion Integration**
-- Implemented SessionEnd hook for automatic drafts
-- Completed /work-log organize logic
-- Published to skills marketplace
+- SessionEnd hook auto-drafts to Notion
+- /work-log AI organizes drafts by category
 
 ---
 
 **Deliverables:** notion-worklog-skills v1.0.0
 
 **Daily Summary:**
-Shipped the complete work-log skill, from auto-draft capture to structured Notion log output.
+Shipped the complete work-log skill — auto-draft to structured Notion log.
 ```
-
-### Debugging
-
-Hook errors are logged to `~/.claude/work-log.log`.
 
 ---
 
-## 中文
+## ⚙️ Requirements
 
-### 功能介绍
+- `curl` and `jq` (standard on macOS / Linux)
+- [Notion integration token](https://www.notion.so/my-integrations) with access to your work log page
+- `ANTHROPIC_API_KEY` (Claude Haiku is used for session summarization — cheap, ~$0.001/session)
 
-这是一个 [Claude Code](https://claude.ai/code) skill，自动把每次 AI 编程会话同步到 Notion 工作日志，无需手动记录。
+---
 
-**自动部分（SessionEnd hook）：** 每次 Claude Code 会话结束时，脚本自动调用 Claude Haiku 将会话提炼为 3-5 条要点，追加到 Notion 页面顶部的「草稿区」callout 块中。完全自动，零打扰。
+## ❓ FAQ
 
-**手动整理（`/work-log`）：** 执行 `/work-log` 后，Claude 读取所有草稿条目，按日期和话题分类，整理成结构化的正式工作日志，并清空草稿区。
+**Does this require any MCP server?**
+No. All Notion API calls use `curl` directly. No MCP setup needed.
 
-```
-会话结束  →  session-end.sh  →  Notion 草稿区（自动）
-/work-log  →  读取所有草稿
-           →  AI 按日期 + 分类整理
-           →  写入正式工作日志
-           →  清空草稿区
-```
+**Will it work with any Notion page?**
+Yes. Set `NOTION_WORKLOG_PAGE_ID` to your page's ID. The skill creates the draft callout on first use.
 
-### 为什么选择这个 skill？
+**What model summarizes sessions?**
+Claude Haiku (`claude-haiku-4-5-20251001`) — fast and cheap. Each session summary costs roughly $0.001.
+
+**What if a session is too short?**
+The hook skips sessions with fewer than 30 characters of transcript. Trivial sessions are not recorded.
+
+**Where do I find errors?**
+Hook errors log to `~/.claude/work-log.log`.
+
+**Can I use this on Windows?**
+The hook script requires bash, curl, and jq. Works on WSL or Git Bash.
+
+---
+
+## 中文说明
+
+### 📋 概述
+
+`work-log` 是一个 [Claude Code](https://claude.ai/code) skill，由两部分组成：
+
+| 部分 | 触发方式 | 功能 |
+|------|---------|------|
+| **SessionEnd Hook** | 自动 — 每次会话结束时 | 调用 Claude Haiku 将会话提炼为 3-5 条要点，追加到 Notion 草稿区 callout |
+| **`/work-log` 命令** | 手动 — 你主动执行 | Claude 读取所有草稿，按日期+分类整理，写入正式工作日志，清空草稿区 |
+
+### 为什么用这个 skill？
 
 | Skill | 自动捕获 | AI 整理 | 写入 Notion | 无需 MCP |
 |-------|---------|---------|------------|---------|
@@ -129,76 +153,45 @@ Hook errors are logged to `~/.claude/work-log.log`.
 | notion-knowledge-capture | 否 | 否 | 是 | 否 |
 | **work-log（本项目）** | **是** | **是** | **是** | **是** |
 
-本 skill 是目前唯一集「自动会话草稿 + AI 智能整理 + 直接写入 Notion（仅用 curl，不依赖 MCP）」于一体的方案。
+目前唯一集「自动会话草稿 + AI 智能整理 + 直接写入 Notion（仅用 curl，不依赖 MCP）」于一体的 Claude Code skill。
 
-### 安装
+### 🚀 快速开始
+
+**1. 安装**
 
 ```bash
 npx skills add huojian-jan/notion-worklog-skills@work-log -g -y
 ```
 
-安装后运行一次 setup，注册 SessionEnd hook：
+**2. 配置环境变量**（加入 `~/.zshrc`）
+
+```bash
+export NOTION_API_TOKEN="secret_..."          # 必填：Notion 集成 Token
+export ANTHROPIC_API_KEY="sk-ant-..."         # 必填：会话摘要用
+export NOTION_WORKLOG_PAGE_ID="your-page-id"  # 可选：你的工作日志页面 ID
+```
+
+**3. 注册 Hook**
 
 ```bash
 ~/.claude/skills/work-log/setup.sh
 ```
 
-### 依赖
+完成！此后每次 Claude Code 会话结束，内容自动写入 Notion 草稿区。
 
-- `curl` 和 `jq`（macOS/Linux 自带）
-- [Notion 集成 Token](https://www.notion.so/my-integrations)，需要对工作日志页面有访问权限
-- `ANTHROPIC_API_KEY`，用于会话摘要（调用 Claude Haiku）
+### ⚙️ 依赖
 
-### 环境变量
+- `curl` 和 `jq`（macOS / Linux 自带）
+- [Notion 集成 Token](https://www.notion.so/my-integrations)，需对工作日志页面有访问权限
+- `ANTHROPIC_API_KEY`，用于摘要（Claude Haiku，每次会话约 $0.001）
 
-添加到 `~/.zshrc` 或 `~/.bashrc`：
+### ❓ 常见问题
 
-```bash
-export NOTION_API_TOKEN="secret_..."          # 必填：Notion 集成 Token
-export ANTHROPIC_API_KEY="sk-ant-..."         # 必填：用于会话摘要
-export NOTION_WORKLOG_PAGE_ID="your-page-id"  # 可选：默认使用内置页面 ID
-```
+**需要 MCP 吗？** 不需要，所有 Notion API 调用通过 `curl` 直接完成。
 
-### 草稿区格式（每次会话自动写入）
+**报错去哪里看？** `~/.claude/work-log.log`。
 
-```
-📝 草稿区（待整理）
-
-[2026-04-12 14:30] · notion-worklog-skills
-· 实现了 SessionEnd hook，自动写入草稿区
-· 完成 /work-log skill 的整理逻辑
-· 发布到 skills.sh 市场
-
-[2026-04-12 16:00] · blog_source
-· 修复了 Hexo 博客的分类页面渲染问题
-· 更新了 CLAUDE.md 的 skill routing 配置
-```
-
-### 正式日志格式（`/work-log` 生成）
-
-```
-# 2026年
-## 4月
-### 第二周（4月7日 - 4月13日）
-
-**4月12日 周六**
-
-**Notion 接入**
-- 实现 SessionEnd hook 自动草稿
-- 完成 /work-log 整理逻辑
-- 发布到 skills 市场
-
----
-
-**产出：** notion-worklog-skills v1.0.0
-
-**今日总结：**
-完成了整个 work-log skill 的开发和发布，实现从草稿到结构化日志的完整链路。
-```
-
-### 调试
-
-Hook 错误日志写入 `~/.claude/work-log.log`，排查问题时可查看。
+**模型消耗大吗？** 使用 Claude Haiku，非常便宜，每次会话摘要约 $0.001。
 
 ---
 
