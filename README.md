@@ -37,88 +37,9 @@ Session ends  →  session-end.sh  →  Notion draft area  (automatic)
 
 ## 🛠️ Getting Started
 
-### Step 1 — Create a Notion Integration (get your API token)
+Setup takes about 2 minutes. The script handles most of it automatically.
 
-1. Open **[https://www.notion.so/my-integrations](https://www.notion.so/my-integrations)** and click **"+ New integration"**
-
-2. Fill in the form:
-   - **Name:** anything, e.g. `work-log`
-   - **Associated workspace:** select your Notion workspace
-   - Leave other fields as defaults
-
-3. Click **"Submit"** (or "Save")
-
-4. On the next screen, copy the **"Internal Integration Token"**
-   — this is your `NOTION_API_TOKEN`, formatted like:
-   ```
-   secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-   ```
-
-> ⚠️ Keep this token private. Anyone with it can access any page you share with it.
-
----
-
-### Step 2 — Create Two Notion Pages
-
-You need **two separate pages**:
-
-| Page | Purpose |
-|------|---------|
-| **Draft page** | Session summaries auto-written here after every session |
-| **Log page** | Formal structured log written here when you run `/work-log` |
-
-For each page:
-1. In Notion, click **"+ New page"** in the left sidebar
-2. Give it a title — recommended names:
-   - Draft page: **"Log Draft"** (or **"日志草稿"**)
-   - Log page: **"Work Log"** (or **"工作日志"**)
-3. Leave the page body **empty**
-
-> **Why two pages?** The draft page is your inbox — raw session bullets accumulate here automatically. The log page is your archive — clean, organized entries written by `/work-log`. Keeping them separate means your formal log is always clean and shareable.
-
----
-
-### Step 3 — Connect the Integration to Both Pages ⚠️
-
-**This step is required for each page, and often missed.** Without it, the Notion API returns 403.
-
-Repeat these steps for **both** the draft page and the log page:
-
-1. Open the page in Notion
-2. Click the **`···`** (three dots) menu at the top-right of the page
-3. Scroll down and click **"Connections"**
-4. In the search box, type your integration name (e.g. `work-log`)
-5. Click the integration, then click **"Confirm"**
-
-The integration name appears in the Connections list — done for that page. Repeat for the other.
-
-> If you don't see "Connections" in the menu, try clicking "Add connections" — it's the same thing in a slightly different Notion UI version.
-
----
-
-### Step 4 — Get Both Page IDs
-
-For each page, open it in a browser. The URL looks like:
-
-```
-https://www.notion.so/your-workspace/Work-Log-Draft-30942947b59c80f39e22eed448e5862f
-                                                      └─────────── Page ID ──────────┘
-```
-
-The **Page ID** is the 32-character hex string at the end of the URL path.
-You can also write it with dashes — both formats work:
-```
-30942947b59c80f39e22eed448e5862f
-30942947-b59c-80f3-9e22-eed448e5862f   ← either is fine
-```
-
-> **Tip:** In the Notion desktop app — right-click the page in the sidebar → **"Copy link"**, then paste the link somewhere and grab the last path segment.
-
-Note down **both** IDs — you'll need them in Step 7.
-
----
-
-### Step 5 — Install the Skill
+### Step 1 — Install the Skill
 
 ```bash
 npx skills add huojian-jan/notion-worklog-skills@work-log -g -y
@@ -126,49 +47,67 @@ npx skills add huojian-jan/notion-worklog-skills@work-log -g -y
 
 ---
 
-### Step 6 — Add API Tokens to Your Shell Profile
-
-```bash
-# Add both lines to ~/.zshrc (or ~/.bashrc on Linux)
-echo 'export NOTION_API_TOKEN="secret_your_token_here"' >> ~/.zshrc
-echo 'export ANTHROPIC_API_KEY="sk-ant-your_key_here"' >> ~/.zshrc
-
-# Reload so the current shell picks them up
-source ~/.zshrc
-```
-
----
-
-### Step 7 — Run Setup
+### Step 2 — Run Setup
 
 ```bash
 ~/.agents/skills/work-log/setup.sh
 ```
 
-The setup script will:
-- Ask for your **draft page ID** and **log page ID** (from Step 4) if not already set
-- Write `~/.config/work-log/config` with all your settings
-- Register the **SessionEnd hook** in `~/.claude/settings.json`
+The script walks you through everything interactively:
 
-When it finishes you should see:
+**What the script does automatically:**
+- Opens your browser to the Notion integration page and the Anthropic API key page
+- Validates your tokens
+- Searches for Notion pages your integration can access
+- **Creates the `日志草稿` (Log Draft) and `工作日志` (Work Log) pages for you** via the Notion API — no manual page creation or ID copying needed
+- Writes `~/.config/work-log/config`
+- Registers the SessionEnd hook in `~/.claude/settings.json`
+
+**What you do manually (can't be automated):**
+1. Create a Notion integration at `notion.so/my-integrations` and copy the token
+2. Connect your integration to one existing Notion page (the parent — once only)
+
+The script guides you through both steps with instructions.
+
+**Example session:**
+
 ```
-[ok] Draft page ID: 30942947-b59c-80f3-9e22-eed448e5862f
-[ok] Log page ID:   ab123456-...
-[ok] NOTION_API_TOKEN is set
-[ok] ANTHROPIC_API_KEY is set
-[ok] Registered SessionEnd hook: ...
+Step 1 — Notion API Token
+  Opening https://www.notion.so/my-integrations ...
+  Paste NOTION_API_TOKEN: secret_...
+  [ok] Integration: 'work-log'
+
+Step 2 — Anthropic API Key
+  [ok] ANTHROPIC_API_KEY already set
+
+Step 3 — Notion Pages
+  Searching for pages your integration can access...
+  Found 3 page(s). Choose a parent:
+    1) Work
+    2) Personal
+    3) Projects
+  Choice [1]: 1
+  [ok] Created '日志草稿' (Log Draft)
+  [ok] Created '工作日志' (Work Log)
+
+Step 4 — Writing config
+  [ok] Config written to: ~/.config/work-log/config
+
+Step 5 — Registering SessionEnd hook
+  [ok] Registered hook
+
 Setup complete!
 ```
 
 ---
 
-### Step 8 — First Session
+### Step 3 — First Session
 
 Start a Claude Code session and work normally. When the session ends, the skill:
 1. Calls Claude Haiku to summarize the session into 3–5 bullet points
-2. Writes them to the `📝 草稿区` callout block on your **draft page**
+2. Writes them to the `📝 草稿区` callout block on your `日志草稿` page
 
-Run `/work-log` anytime to organize all accumulated drafts into a clean structured log on the **log page**.
+Run `/work-log` anytime to organize all accumulated drafts into a clean structured log on the `工作日志` page.
 
 ---
 
@@ -325,86 +264,9 @@ The hook script requires bash, curl, and jq. Use WSL or Git Bash.
 
 ## 🛠️ 从零开始配置
 
-### 第一步 — 创建 Notion 集成（获取 Token）
+配置大约需要 2 分钟，脚本会自动完成大部分工作。
 
-1. 打开 **[https://www.notion.so/my-integrations](https://www.notion.so/my-integrations)**，点击 **"+ New integration"**
-
-2. 填写表单：
-   - **Name：** 随便填，比如 `work-log`
-   - **Associated workspace：** 选择你的 Notion 工作区
-   - 其他字段保持默认
-
-3. 点击 **"Submit"**（或 "Save"）保存
-
-4. 在下一个页面复制 **"Internal Integration Token"**
-   — 这就是你的 `NOTION_API_TOKEN`，格式如下：
-   ```
-   secret_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-   ```
-
-> ⚠️ 妥善保管这个 Token，任何拿到它的人都能访问你分享给它的 Notion 页面。
-
----
-
-### 第二步 — 在 Notion 创建两个页面
-
-你需要创建**两个独立的页面**：
-
-| 页面 | 用途 |
-|------|------|
-| **草稿页** | 每次会话结束后自动写入的收件箱 |
-| **日志页** | 执行 `/work-log` 后写入整理好的正式日志 |
-
-每个页面：
-1. 在 Notion 左侧边栏点击 **"+ New page"** 新建页面
-2. 标题推荐使用：草稿页 **"日志草稿"**，日志页 **"工作日志"**
-3. 页面内容**留空**
-
-> **为什么要两个页面？** 草稿页是收件箱——原始会话要点自动积累在这里。日志页是档案——执行 `/work-log` 后写入整理好的正式条目，随时可以分享。两页分离后，`/work-log --clear` 可以安全清空草稿收件箱而不影响正式日志。
-
----
-
-### 第三步 — 将集成分别连接到两个页面（关键步骤，容易漏掉）⚠️
-
-**这一步必须做，而且两个页面都要做。** 跳过的话 Notion API 会返回 403，什么都写不进去。
-
-对**草稿页**和**日志页**分别执行以下步骤：
-
-1. 打开该页面
-2. 点击页面**右上角**的 **`···`**（三个点）菜单
-3. 向下找到 **"Connections"**，点击展开
-4. 在搜索框输入你的集成名称（如 `work-log`）
-5. 点击集成名称，再点击 **"Confirm"** 确认授权
-
-完成后该集成会出现在 Connections 列表中，说明连接成功。对另一个页面重复同样操作。
-
-> 如果菜单里没有 "Connections"，找找 "Add connections"，是同一个功能的不同版本 UI。
-
----
-
-### 第四步 — 获取两个页面的 ID
-
-对每个页面，在浏览器中打开，URL 格式如下：
-
-```
-https://www.notion.so/your-workspace/Work-Log-Draft-30942947b59c80f39e22eed448e5862f
-                                                      └────────── 这串就是 Page ID ──┘
-```
-
-**Page ID** 是 URL 末尾的 32 位十六进制字符串，带不带分隔符都能用：
-
-```
-30942947b59c80f39e22eed448e5862f
-30942947-b59c-80f3-9e22-eed448e5862f   ← 两种格式均可
-```
-
-> **小技巧：** 在 Notion 桌面端，右键点击左侧边栏的页面 → **"Copy link"**，然后粘贴链接，取最后一段路径即可。
-
-两个页面的 ID 都记录下来，第七步会用到。
-
----
-
-### 第五步 — 安装 skill
+### 第一步 — 安装 skill
 
 ```bash
 npx skills add huojian-jan/notion-worklog-skills@work-log -g -y
@@ -412,48 +274,59 @@ npx skills add huojian-jan/notion-worklog-skills@work-log -g -y
 
 ---
 
-### 第六步 — 将 Token 写入 shell 配置文件
-
-```bash
-# 追加到 ~/.zshrc（Linux 用 ~/.bashrc）
-echo 'export NOTION_API_TOKEN="secret_你的token"' >> ~/.zshrc
-echo 'export ANTHROPIC_API_KEY="sk-ant-你的key"' >> ~/.zshrc
-
-# 重新加载让当前终端生效
-source ~/.zshrc
-```
-
----
-
-### 第七步 — 运行 setup 完成配置
+### 第二步 — 运行 setup 脚本
 
 ```bash
 ~/.agents/skills/work-log/setup.sh
 ```
 
-setup 脚本会：
-- 分别询问**草稿页 ID** 和**日志页 ID**（第四步获取的）
-- 创建 `~/.config/work-log/config` 保存所有设置
-- 在 `~/.claude/settings.json` 中注册 **SessionEnd hook**
+脚本会全程引导你完成配置：
 
-看到以下输出说明配置成功：
+**脚本自动完成的事情：**
+- 自动打开浏览器，跳转到 Notion 集成页面和 Anthropic API Key 页面
+- 验证你输入的 Token
+- 搜索你的集成能访问的 Notion 页面
+- **通过 API 自动创建 `日志草稿` 和 `工作日志` 两个页面** — 无需手动创建，无需手动复制 ID
+- 写入 `~/.config/work-log/config`
+- 在 `~/.claude/settings.json` 中注册 SessionEnd hook
+
+**需要你手动完成的事情（无法自动化）：**
+1. 在 `notion.so/my-integrations` 创建 Notion 集成，复制 Token
+2. 将集成连接到一个已有的 Notion 页面（作为父页面，只需操作一次）
+
+脚本会在两个步骤处给出具体操作指引。
+
+**示例运行过程：**
 
 ```
-[ok] Draft page ID: 30942947-b59c-80f3-9e22-eed448e5862f
-[ok] Log page ID:   ab123456-...
-[ok] NOTION_API_TOKEN is set
-[ok] ANTHROPIC_API_KEY is set
-[ok] Registered SessionEnd hook: ...
+Step 1 — Notion API Token
+  Opening https://www.notion.so/my-integrations ...
+  Paste NOTION_API_TOKEN: secret_...
+  [ok] Integration: 'work-log'
+
+Step 2 — Anthropic API Key
+  [ok] ANTHROPIC_API_KEY already set
+
+Step 3 — Notion Pages
+  Searching for pages your integration can access...
+  Found 3 page(s). Choose a parent:
+    1) Work
+    2) Personal
+    3) Projects
+  Choice [1]: 1
+  [ok] Created '日志草稿' (Log Draft)
+  [ok] Created '工作日志' (Work Log)
+
 Setup complete!
 ```
 
 ---
 
-### 第八步 — 开始使用
+### 第三步 — 开始使用
 
 正常使用 Claude Code 即可。会话结束时，skill 自动：
 1. 调用 Claude Haiku 将会话提炼为 3-5 条要点
-2. 写入**草稿页**顶部的 `📝 草稿区` callout 块
+2. 写入 `日志草稿` 顶部的 `📝 草稿区` callout 块
 
 想整理草稿时，在 Claude Code 中执行：
 
@@ -461,7 +334,7 @@ Setup complete!
 /work-log
 ```
 
-草稿整理后写入**日志页**。默认保留草稿，加 `--clear` 参数可在整理后自动清空草稿。
+草稿整理后写入 `工作日志`。默认保留草稿，加 `--clear` 参数可在整理后自动清空草稿。
 
 ---
 
