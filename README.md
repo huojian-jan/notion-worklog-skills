@@ -30,14 +30,16 @@ echo 'export WORK_LOG_DRAFT_TARGET=notion' >> ~/.zshrc && source ~/.zshrc
 
 ```
 Session ends  →  session-end.sh (async, background)
-              →  saves to ~/.claude/work-log-drafts/YYYY-MM-DD.jsonl  (default)
-                 or Notion draft callout                               (optional)
+              →  local: ~/.claude/work-log-drafts/YYYY-MM-DD.jsonl  (default)
+                 notion: Notion draft page (NOTION_WORKLOG_DRAFT_PAGE_ID)
 
-/work-log     →  Claude reads draft files
-              →  AI summarizes + groups by date + category
-              →  Writes structured log to Notion
-              →  Clears draft files
+/work-log          →  reads drafts → AI summarizes → writes to Notion log page → keeps drafts
+/work-log --clear  →  reads drafts → AI summarizes → writes to Notion log page → clears drafts
 ```
+
+Two separate Notion pages (notion draft mode):
+- **Draft page** (`NOTION_WORKLOG_DRAFT_PAGE_ID`) — sessions auto-written here, date-grouped
+- **Log page** (`NOTION_WORKLOG_PAGE_ID`) — formal structured log, written by `/work-log`
 
 ### Why this skill?
 
@@ -100,7 +102,8 @@ Sessions are captured automatically in the background. Run `/work-log` whenever 
 ## Usage
 
 ```
-/work-log                    # organize drafts → write to Notion → clear local files
+/work-log           # organize drafts → write to Notion log page → keep drafts
+/work-log --clear   # organize drafts → write to Notion log page → clear drafts
 ```
 
 ---
@@ -139,8 +142,9 @@ All config is via environment variables (add to `~/.zshrc`):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NOTION_API_TOKEN` | — | **Required** for Notion writes |
-| `NOTION_WORKLOG_PAGE_ID` | `30942947-...` | Target Notion page ID |
+| `NOTION_API_TOKEN` | — | **Required** for all Notion writes |
+| `NOTION_WORKLOG_PAGE_ID` | — | **Required** — Notion log page (formal log written here) |
+| `NOTION_WORKLOG_DRAFT_PAGE_ID` | falls back to `PAGE_ID` | Notion draft page (sessions auto-written here in notion mode) |
 | `WORK_LOG_DRAFT_TARGET` | `local` | `local` or `notion` |
 | `WORK_LOG_MIN_MESSAGES` | `5` | Min user messages to trigger capture |
 | `WORK_LOG_DRAFTS_DIR` | `~/.claude/work-log-drafts` | Local draft storage directory |
@@ -170,16 +174,16 @@ Skips sessions with fewer than `WORK_LOG_MIN_MESSAGES` user messages (default: 5
 
 In `local` mode: saves `{ts, project, transcript}` to a dated `.jsonl` file. No AI call, instant.
 
-In `notion` mode: launches `claude --print` in the background to summarize the session and write to the Notion draft callout. Uses Claude Code's own auth — no separate `ANTHROPIC_API_KEY` needed.
+In `notion` mode: runs `claude --print` to summarize the session, then writes the bullets directly to a dedicated Notion draft page (`NOTION_WORKLOG_DRAFT_PAGE_ID`). Uses Claude Code's own auth — no separate `ANTHROPIC_API_KEY` needed.
 
 ### `/work-log` skill (`SKILL.md`)
 
 When you run `/work-log`, Claude:
-1. Reads all `.jsonl` files from `~/.claude/work-log-drafts/`
+1. Reads drafts (local `.jsonl` files or Notion draft page, depending on mode)
 2. Summarizes and categorizes each session using its own in-context intelligence
 3. Groups entries by date, assigns 2–4 categories per day (max 4 bullets each)
-4. Writes structured blocks to the Notion work log page
-5. Deletes the processed local files
+4. Writes structured blocks to the Notion **log page** (`NOTION_WORKLOG_PAGE_ID`)
+5. If `--clear` was passed: clears the draft area; otherwise keeps drafts intact
 
 ---
 
@@ -223,21 +227,30 @@ tail -f ~/.claude/work-log.log
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
 | `NOTION_API_TOKEN` | — | **必填**，用于写入 Notion |
-| `NOTION_WORKLOG_PAGE_ID` | 内置 | 工作日志 Notion 页面 ID |
-| `WORK_LOG_DRAFT_TARGET` | `local` | `local`（本地文件）或 `notion`（直接写 Notion） |
+| `NOTION_WORKLOG_PAGE_ID` | — | **必填**，正式日志页面 ID |
+| `NOTION_WORKLOG_DRAFT_PAGE_ID` | 同 `PAGE_ID` | 草稿页面 ID（notion 模式）|
+| `WORK_LOG_DRAFT_TARGET` | `local` | `local`（本地文件）或 `notion`（写 Notion 草稿页）|
 | `WORK_LOG_MIN_MESSAGES` | `5` | 触发记录的最小用户消息数，短会话自动跳过 |
 | `WORK_LOG_DRAFTS_DIR` | `~/.claude/work-log-drafts` | 本地草稿目录 |
 
 ### 两种草稿模式
 
-**`local`（默认）** — 最简单，不需要额外 API Key：
-会话结束时把原始数据存到 `~/.claude/work-log-drafts/YYYY-MM-DD.jsonl`，等你执行 `/work-log` 时由 Claude 在上下文中做摘要和分类。
+**`local`（默认）** — 最简单，不需要额外配置：
+会话结束时把原始数据存到 `~/.claude/work-log-drafts/YYYY-MM-DD.jsonl`，执行 `/work-log` 时由 Claude 做摘要和分类。
 
-**`notion`** — 会话结束后直接写入 Notion 草稿区：
+**`notion`** — 会话结束后直接写入专属草稿页：
 ```bash
 export WORK_LOG_DRAFT_TARGET=notion
+export NOTION_WORKLOG_DRAFT_PAGE_ID="你的草稿页ID"
 ```
-在后台启动新的 `claude --print` 进程做摘要，复用 Claude Code 自身的认证，不需要单独的 `ANTHROPIC_API_KEY`。
+两个独立的 Notion 页面：**草稿页**（每次会话自动写入）和**日志页**（`/work-log` 整理后写入）。
+
+### `/work-log` 参数
+
+```bash
+/work-log           # 整理草稿 → 写入日志页 → 保留草稿
+/work-log --clear   # 整理草稿 → 写入日志页 → 清空草稿
+```
 
 ### 排查问题
 

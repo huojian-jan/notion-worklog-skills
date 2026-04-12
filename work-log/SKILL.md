@@ -1,36 +1,44 @@
 ---
 name: work-log
-description: Organize Notion work log. Reads accumulated session drafts (local files or Notion callout), groups by date and category using AI, writes the formal structured log to Notion, then clears drafts.
-version: 1.1.0
+description: Organize Notion work log. Reads accumulated session drafts (local files or Notion draft page), groups by date and category using AI, writes the formal structured log to the Notion log page. Optionally clears drafts with --clear.
+version: 1.2.0
 author: huojian-jan
 triggers:
   - /work-log
 ---
 
-You are executing the `/work-log` skill. Read the Notion draft area, organize all session entries into a formal work log, then clear the drafts.
+You are executing the `/work-log` skill. Read draft session entries, organize them into a formal work log, write to the Notion log page, and optionally clear drafts.
 
 ## Configuration
 
 Set at the start of every step:
 
 ```bash
-PAGE_ID="${NOTION_WORKLOG_PAGE_ID:-30942947-b59c-80f3-9e22-eed448e5862f}"
-NOTION_VER="${NOTION_API_VERSION:-2022-06-28}"
+PAGE_ID="${NOTION_WORKLOG_PAGE_ID:-}"              # Notion log page (formal log written here)
+DRAFT_PAGE_ID="${NOTION_WORKLOG_DRAFT_PAGE_ID:-$PAGE_ID}"  # Notion draft page (sessions auto-saved here)
+NOTION_VER="${NOTION_API_VERSION:-2025-09-03}"
 NOTION_BASE="https://api.notion.com/v1"
 DRAFT_TARGET="${WORK_LOG_DRAFT_TARGET:-local}"
 DRAFTS_DIR="${WORK_LOG_DRAFTS_DIR:-$HOME/.claude/work-log-drafts}"
 ```
 
+Parse `--clear` flag from the user's command:
+- If the user typed `/work-log --clear`: `CLEAR_DRAFTS=true`
+- Otherwise: `CLEAR_DRAFTS=false`
+
 ## Step 1: Check environment
 
 ```bash
-echo "TOKEN: ${NOTION_API_TOKEN:0:12}..."
-echo "PAGE_ID: $PAGE_ID"
+echo "TOKEN:        ${NOTION_API_TOKEN:0:12}..."
+echo "PAGE_ID:      $PAGE_ID"
+echo "DRAFT_PAGE_ID: $DRAFT_PAGE_ID"
 echo "DRAFT_TARGET: $DRAFT_TARGET"
-echo "DRAFTS_DIR: $DRAFTS_DIR"
+echo "CLEAR_DRAFTS: $CLEAR_DRAFTS"
 ```
 
-If `NOTION_API_TOKEN` is empty: stop and tell the user to set it in their environment first (`export NOTION_API_TOKEN="..."`).
+If `NOTION_API_TOKEN` is empty: stop and tell the user to set it first (`export NOTION_API_TOKEN="..."`).
+
+If `PAGE_ID` is empty: stop and tell the user to set `NOTION_WORKLOG_PAGE_ID` in their environment.
 
 ## Step 2: Read draft entries
 
@@ -48,9 +56,9 @@ ls "$DRAFTS_DIR"/*.jsonl 2>/dev/null || echo "NO_FILES"
 
 If no files: tell the user "No draft files found at `$DRAFTS_DIR`. Sessions haven't been captured yet, or the minimum message threshold wasn't reached." Then stop.
 
-For each `.jsonl` file, read line by line. Each line is a JSON object with:
+For each `.jsonl` file, read line by line. Each line is a JSON object:
 ```json
-{"ts": "2026-04-12 14:30", "project": "blog_source", "transcript": "...full transcript..."}
+{"ts": "2026-04-12 14:30", "project": "blog_source", "transcript": "..."}
 ```
 
 Parse all lines from all files. Build a structured session list:
@@ -68,36 +76,23 @@ Save file paths for cleanup in Step 6.
 
 ### If `DRAFT_TARGET == "notion"`
 
-```bash
-curl -s \
-  -H "Authorization: Bearer $NOTION_API_TOKEN" \
-  -H "Notion-Version: $NOTION_VER" \
-  "$NOTION_BASE/blocks/$PAGE_ID/children?page_size=100"
-```
-
-Find the block where:
-- `type == "callout"`
-- `callout.rich_text[0].text.content` contains "草稿" or "DRAFT" (case-insensitive)
-
-Save its `id` as `DRAFT_ID`.
-
-If no such block exists: tell the user "No draft callout found. Sessions haven't been captured yet, or the draft callout was deleted. Ensure the hook is registered by running setup.sh." Then stop.
+Fetch the draft page's direct children:
 
 ```bash
 curl -s \
   -H "Authorization: Bearer $NOTION_API_TOKEN" \
   -H "Notion-Version: $NOTION_VER" \
-  "$NOTION_BASE/blocks/$DRAFT_ID/children?page_size=100"
+  "$NOTION_BASE/blocks/$DRAFT_PAGE_ID/children?page_size=100"
 ```
 
-Collect all child block IDs (needed for cleanup in Step 6).
+The draft page uses a date-grouped flat structure:
+- `paragraph` with bold blue text matching `^── \d{4}-\d{2}-\d{2} ──` = **date section header** → extract date
+- `paragraph` with bold text matching `^· \[\d{2}:\d{2}\]` = **session header** → extract time and project
+- `bulleted_list_item` blocks following a session header = that session's **bullets**
 
-Parse entries using the date-grouped structure:
-- `paragraph` block with bold blue text matching `^── \d{4}-\d{2}-\d{2} ──` = date section header → extract the date
-- `paragraph` block with bold text matching `^· \[\d{2}:\d{2}\]` = session header → extract time and project name
-- `bulleted_list_item` blocks after a session header = that session's bullets
+Parse all blocks and build a structured session list grouped by date. Collect all block IDs for cleanup in Step 6.
 
-Build a structured session list from these blocks, grouping sessions under their date.
+If the page is empty or has no recognizable entries: tell the user "Draft page is empty. No sessions have been captured yet." Then stop.
 
 ---
 
@@ -129,19 +124,16 @@ Determine the Chinese weekday name (周一 through 周日).
 
 ## Step 5: Write the formal log
 
-Check the first 100 blocks of the page for existing year/month headings:
+Fetch the first 100 blocks of the **log page** (`PAGE_ID`) to check for existing year/month headings:
 
 ```bash
-# Already fetched in Step 2 (notion mode) — reuse that response
-# For local mode: fetch now
 curl -s \
   -H "Authorization: Bearer $NOTION_API_TOKEN" \
   -H "Notion-Version: $NOTION_VER" \
   "$NOTION_BASE/blocks/$PAGE_ID/children?page_size=100"
 ```
 
-Look for `heading_1` containing the current year ("2026年") and `heading_2` containing
-the current month ("4月"). Only include them in your blocks if they don't already exist.
+Look for `heading_1` containing the current year ("2026年") and `heading_2` containing the current month ("4月"). Only include them in your blocks if they don't already exist.
 
 Build a JSON blocks array for each date (oldest first). Structure:
 
@@ -161,11 +153,11 @@ Build a JSON blocks array for each date (oldest first). Structure:
 ```
 
 Notes:
-- Only add heading_1/heading_2 if they don't already exist on the page
+- Only add heading_1/heading_2 if they don't already exist on the log page
 - Repeat category + bullets for each category in a date
 - Add a `divider` between separate dates
 
-Append to the page:
+Append to the **log page**:
 
 ```bash
 curl -s -X PATCH \
@@ -176,13 +168,13 @@ curl -s -X PATCH \
   "$NOTION_BASE/blocks/$PAGE_ID/children"
 ```
 
-Check the response for `"object":"error"`. If there's an error, report it and **stop** — do not proceed to delete drafts.
+Check the response for `"object":"error"`. If there's an error, report it and **stop** — do not proceed to clear drafts.
 
-## Step 6: Clear drafts
+## Step 6: Clear drafts (only if `--clear`)
 
-**Branch based on `DRAFT_TARGET`:**
+**Skip this step if `CLEAR_DRAFTS=false`. Tell the user they can run `/work-log --clear` to also clear the draft area.**
 
-### If `DRAFT_TARGET == "local"`
+### If `DRAFT_TARGET == "local"` and `CLEAR_DRAFTS=true`
 
 Delete all processed `.jsonl` files:
 
@@ -190,9 +182,9 @@ Delete all processed `.jsonl` files:
 rm -f "$DRAFTS_DIR"/*.jsonl
 ```
 
-### If `DRAFT_TARGET == "notion"`
+### If `DRAFT_TARGET == "notion"` and `CLEAR_DRAFTS=true`
 
-Delete each child block from the draft callout (IDs collected in Step 2), one at a time:
+Delete each block from the draft page (IDs collected in Step 2), one at a time:
 
 ```bash
 curl -s -X DELETE \
@@ -201,12 +193,14 @@ curl -s -X DELETE \
   "$NOTION_BASE/blocks/$BLOCK_ID"
 ```
 
-Do NOT delete the parent draft callout block itself — keep the container for future sessions.
+Delete all blocks including date headers and session entries. The page itself is kept — it will refill automatically as new sessions are captured.
 
 ## Step 7: Report
 
 Tell the user:
 - How many sessions were processed
 - Which dates were covered
-- How many formal log blocks were written
-- That the draft area has been cleared and is ready for new sessions
+- How many formal log blocks were written to the log page
+- Whether drafts were cleared or retained
+  - If retained: "Drafts kept. Run `/work-log --clear` to clear them."
+  - If cleared: "Draft area cleared and ready for new sessions."

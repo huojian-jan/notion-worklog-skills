@@ -1,13 +1,14 @@
 #!/usr/bin/env zsh
 # work-log/scripts/session-end.sh
-# SessionEnd hook: captures session summary to local file (default) or Notion.
+# SessionEnd hook: captures session summary to local draft or Notion draft page.
 #
 # Config via environment variables:
-#   WORK_LOG_DRAFT_TARGET  "local" (default) | "notion"
-#   WORK_LOG_MIN_MESSAGES  minimum user messages to trigger (default: 5)
-#   WORK_LOG_DRAFTS_DIR    local drafts directory (default: ~/.claude/work-log-drafts)
-#   NOTION_WORKLOG_PAGE_ID Notion page ID (required for notion mode)
-#   NOTION_API_TOKEN       Notion API token (required for notion mode)
+#   WORK_LOG_DRAFT_TARGET       "local" (default) | "notion"
+#   WORK_LOG_MIN_MESSAGES       min user messages to trigger (default: 5)
+#   WORK_LOG_DRAFTS_DIR         local drafts dir (default: ~/.claude/work-log-drafts)
+#   NOTION_API_TOKEN            required for notion mode
+#   NOTION_WORKLOG_DRAFT_PAGE_ID  Notion draft page ID (notion mode)
+#   NOTION_WORKLOG_PAGE_ID        fallback if DRAFT_PAGE_ID not set
 
 set -euo pipefail
 
@@ -86,8 +87,8 @@ fi
 # ════════════════════════════════════════════════════════════════════════════
 # MODE: local (default)
 # Save raw session entry to ~/.claude/work-log-drafts/YYYY-MM-DD.jsonl
-# Each file = one date; each line = one session.
-# No AI call needed — /work-log skill summarizes when triggered.
+# One file per date; one JSON line per session.
+# No AI call needed — /work-log summarizes when triggered.
 # ════════════════════════════════════════════════════════════════════════════
 if [ "$DRAFT_TARGET" = "local" ]; then
   mkdir -p "$DRAFTS_DIR"
@@ -100,15 +101,15 @@ if [ "$DRAFT_TARGET" = "local" ]; then
     '{ts: $ts, project: $project, transcript: $transcript}')
 
   printf '%s\n' "$ENTRY" >> "$DRAFT_FILE"
-  log "Saved to $DRAFT_FILE (entries: $(wc -l < "$DRAFT_FILE"))"
+  log "Saved to $DRAFT_FILE (entries: $(wc -l < "$DRAFT_FILE" | tr -d ' '))"
   exit 0
 fi
 
 # ════════════════════════════════════════════════════════════════════════════
 # MODE: notion
-# Summarize via claude --print, then write to Notion draft callout with curl.
+# Summarize via claude --print, then append to the dedicated Notion draft page.
 #
-# Draft callout structure (flat children, date-grouped):
+# Draft page structure (date-grouped, blocks written directly to the page):
 #   ── 2026-04-12 ──              ← date header (bold blue paragraph)
 #   · [11:28] project-name        ← session header (bold paragraph)
 #   • 要点1                        ← bulleted_list_item
@@ -116,6 +117,10 @@ fi
 #   · [14:30] another-project     ← next session, same date
 #   ── 2026-04-13 ──              ← next date
 #   ...
+#
+# Two separate Notion pages:
+#   NOTION_WORKLOG_DRAFT_PAGE_ID  — draft page (auto-written by this hook)
+#   NOTION_WORKLOG_PAGE_ID        — log page  (written by /work-log)
 # ════════════════════════════════════════════════════════════════════════════
 if [ "$DRAFT_TARGET" = "notion" ]; then
   if [ -z "${NOTION_API_TOKEN:-}" ]; then
@@ -123,11 +128,17 @@ if [ "$DRAFT_TARGET" = "notion" ]; then
     exit 0
   fi
 
-  PAGE_ID="${NOTION_WORKLOG_PAGE_ID:-30942947-b59c-80f3-9e22-eed448e5862f}"
+  # Use dedicated draft page; fall back to log page if not configured
+  DRAFT_PAGE_ID="${NOTION_WORKLOG_DRAFT_PAGE_ID:-${NOTION_WORKLOG_PAGE_ID:-}}"
+  if [ -z "$DRAFT_PAGE_ID" ]; then
+    log_err "Neither NOTION_WORKLOG_DRAFT_PAGE_ID nor NOTION_WORKLOG_PAGE_ID is set."
+    exit 0
+  fi
+
   NOTION_VER="2025-09-03"
   NOTION_BASE="https://api.notion.com/v1"
 
-  log "notion mode: summarizing session (project: $PROJECT)"
+  log "notion mode: summarizing session (project: $PROJECT, draft page: $DRAFT_PAGE_ID)"
 
   # ── Step 1: Summarize with claude --print ──────────────────────────────────
   BULLETS=$(claude --print "从以下会话记录中提炼 3-5 条工作要点。要求：每条不超过 25 字，中文，只写做了什么。每条单独一行，不加序号或符号。
@@ -142,41 +153,18 @@ ${TRANSCRIPT}" 2>/dev/null || echo "")
 
   log "summarized: $(echo "$BULLETS" | wc -l | tr -d ' ') bullets"
 
-  # ── Step 2: Find or create the draft callout ───────────────────────────────
-  PAGE_BLOCKS=$(curl -s \
+  # ── Step 2: Check if today's date header already exists on the draft page ──
+  PAGE_CHILDREN=$(curl -s \
     -H "Authorization: Bearer $NOTION_API_TOKEN" \
     -H "Notion-Version: $NOTION_VER" \
-    "$NOTION_BASE/blocks/$PAGE_ID/children?page_size=100")
+    "$NOTION_BASE/blocks/$DRAFT_PAGE_ID/children?page_size=100")
 
-  DRAFT_ID=$(echo "$PAGE_BLOCKS" | jq -r '
-    .results[] |
-    select(.type == "callout") |
-    select(.callout.rich_text[0].text.content | test("草稿|DRAFT"; "i")) |
-    .id' 2>/dev/null | head -1)
-
-  if [ -z "$DRAFT_ID" ] || [ "$DRAFT_ID" = "null" ]; then
-    log "No draft callout found — creating one."
-    CREATE_RESP=$(curl -s -X PATCH \
-      -H "Authorization: Bearer $NOTION_API_TOKEN" \
-      -H "Notion-Version: $NOTION_VER" \
-      -H "Content-Type: application/json" \
-      -d '{"children":[{"type":"callout","callout":{"rich_text":[{"type":"text","text":{"content":"草稿区（待整理）"}}],"icon":{"type":"emoji","emoji":"📝"},"color":"yellow_background"}}]}' \
-      "$NOTION_BASE/blocks/$PAGE_ID/children")
-    DRAFT_ID=$(echo "$CREATE_RESP" | jq -r '.results[0].id' 2>/dev/null)
-    if [ -z "$DRAFT_ID" ] || [ "$DRAFT_ID" = "null" ]; then
-      log_err "Failed to create draft callout: $(echo "$CREATE_RESP" | jq -r '.message // "unknown"' 2>/dev/null)"
-      exit 0
-    fi
-    log "Created draft callout: $DRAFT_ID"
+  if echo "$PAGE_CHILDREN" | jq -e '.object == "error"' > /dev/null 2>&1; then
+    log_err "Failed to read draft page: $(echo "$PAGE_CHILDREN" | jq -r '.message' 2>/dev/null)"
+    exit 0
   fi
 
-  # ── Step 3: Check if today's date header already exists ────────────────────
-  DRAFT_CHILDREN=$(curl -s \
-    -H "Authorization: Bearer $NOTION_API_TOKEN" \
-    -H "Notion-Version: $NOTION_VER" \
-    "$NOTION_BASE/blocks/$DRAFT_ID/children?page_size=100")
-
-  LAST_DATE=$(echo "$DRAFT_CHILDREN" | jq -r '
+  LAST_DATE=$(echo "$PAGE_CHILDREN" | jq -r '
     [.results[] |
       select(.type == "paragraph") |
       (.paragraph.rich_text[0]?.text.content // "")
@@ -184,8 +172,7 @@ ${TRANSCRIPT}" 2>/dev/null || echo "")
     map(select(test("^── [0-9]{4}-[0-9]{2}-[0-9]{2}"))) |
     last // ""' 2>/dev/null || echo "")
 
-  # ── Step 4: Build blocks JSON ──────────────────────────────────────────────
-  # Build bullet blocks from BULLETS (one line per bullet)
+  # ── Step 3: Build blocks JSON ──────────────────────────────────────────────
   BULLET_BLOCKS=""
   while IFS= read -r line; do
     [ -z "$line" ] && continue
@@ -204,13 +191,13 @@ ${TRANSCRIPT}" 2>/dev/null || echo "")
     BLOCKS_JSON="[${SESSION_HEADER},${BULLET_BLOCKS}]"
   fi
 
-  # ── Step 5: Append to draft callout ───────────────────────────────────────
+  # ── Step 4: Append to draft page ──────────────────────────────────────────
   APPEND_RESP=$(curl -s -X PATCH \
     -H "Authorization: Bearer $NOTION_API_TOKEN" \
     -H "Notion-Version: $NOTION_VER" \
     -H "Content-Type: application/json" \
     -d "{\"children\": ${BLOCKS_JSON}}" \
-    "$NOTION_BASE/blocks/$DRAFT_ID/children")
+    "$NOTION_BASE/blocks/$DRAFT_PAGE_ID/children")
 
   if echo "$APPEND_RESP" | jq -e '.object == "error"' > /dev/null 2>&1; then
     log_err "Notion append failed: $(echo "$APPEND_RESP" | jq -r '.message' 2>/dev/null)"
@@ -218,7 +205,7 @@ ${TRANSCRIPT}" 2>/dev/null || echo "")
   fi
 
   WRITTEN=$(echo "$APPEND_RESP" | jq '.results | length' 2>/dev/null || echo "?")
-  log "Written $WRITTEN blocks to Notion draft (date: $DATE, project: $PROJECT)"
+  log "Written $WRITTEN blocks to Notion draft page (date: $DATE, project: $PROJECT)"
   exit 0
 fi
 
