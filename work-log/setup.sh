@@ -27,8 +27,8 @@ open_url() {
   fi
 }
 
-notion_get()  { curl -sf --max-time 15 -H "Authorization: Bearer $NOTION_API_TOKEN" -H "Notion-Version: $NOTION_VER" "$NOTION_BASE/$1" 2>/dev/null || true; }
-notion_post() { curl -sf --max-time 15 -X POST -H "Authorization: Bearer $NOTION_API_TOKEN" -H "Notion-Version: $NOTION_VER" -H "Content-Type: application/json" -d "$2" "$NOTION_BASE/$1" 2>/dev/null || true; }
+notion_get()  { curl -s --max-time 15 -H "Authorization: Bearer $NOTION_API_TOKEN" -H "Notion-Version: $NOTION_VER" "$NOTION_BASE/$1" 2>/dev/null || true; }
+notion_post() { curl -s --max-time 15 -X POST -H "Authorization: Bearer $NOTION_API_TOKEN" -H "Notion-Version: $NOTION_VER" -H "Content-Type: application/json" -d "$2" "$NOTION_BASE/$1" 2>/dev/null || true; }
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
@@ -79,9 +79,10 @@ if [ -z "${NOTION_API_TOKEN:-}" ]; then
   read -r NOTION_API_TOKEN
   NOTION_API_TOKEN="${NOTION_API_TOKEN:-}"
   if [ -z "$NOTION_API_TOKEN" ]; then
-    err "Token is required." && exit 1
+    err "Token is required."; exit 1
   fi
   export NOTION_API_TOKEN
+  _PROMPTED_TOKEN=true
 
   echo ""
   warn "Token captured for this session only."
@@ -96,8 +97,8 @@ fi
 # Validate token
 printf "     Validating token... "
 VALIDATE_RESP=$(notion_get "users/me")
-if echo "$VALIDATE_RESP" | jq -e '.object == "error"' >/dev/null 2>&1; then
-  ERR=$(echo "$VALIDATE_RESP" | jq -r '.message // "unknown"' 2>/dev/null)
+if [ -z "$VALIDATE_RESP" ] || echo "$VALIDATE_RESP" | jq -e '.object == "error"' >/dev/null 2>&1; then
+  ERR=$(echo "$VALIDATE_RESP" | jq -r '.message // "unknown"' 2>/dev/null || echo "no response — check internet access")
   echo ""
   err "Token validation failed: $ERR"
   info "Make sure you copied the full token and have internet access."
@@ -125,6 +126,7 @@ if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
   read -r ANTHROPIC_API_KEY_INPUT
   if [ -n "${ANTHROPIC_API_KEY_INPUT:-}" ]; then
     export ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY_INPUT"
+    _PROMPTED_KEY=true
     echo ""
     warn "Key captured for this session only."
     info "Add to ~/.zshrc: export ANTHROPIC_API_KEY=\"sk-ant-...\""
@@ -249,14 +251,14 @@ else
     info "Open the page in a browser — the ID is the last 32 chars of the URL."
     printf "  Draft page ID: "
     read -r CURRENT_DRAFT_ID
-    [ -z "$CURRENT_DRAFT_ID" ] && err "Draft page ID is required." && exit 1
+    if [ -z "$CURRENT_DRAFT_ID" ]; then err "Draft page ID is required."; exit 1; fi
   fi
 
   if [ -z "$CURRENT_LOG_ID" ]; then
     info "Enter the '工作日志' (Work Log) page ID manually."
     printf "  Log page ID:   "
     read -r CURRENT_LOG_ID
-    [ -z "$CURRENT_LOG_ID" ] && err "Log page ID is required." && exit 1
+    if [ -z "$CURRENT_LOG_ID" ]; then err "Log page ID is required."; exit 1; fi
   fi
 fi
 

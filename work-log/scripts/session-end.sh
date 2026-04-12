@@ -42,7 +42,14 @@ fi
 # ── Read session data from stdin ──────────────────────────────────────────
 SESSION_DATA=""
 if [ ! -t 0 ]; then
-  SESSION_DATA=$(timeout 10 cat 2>/dev/null || echo "")
+  # timeout is GNU coreutils (not on macOS by default); fall back to gtimeout then plain cat
+  if command -v timeout &>/dev/null; then
+    SESSION_DATA=$(timeout 10 cat 2>/dev/null || echo "")
+  elif command -v gtimeout &>/dev/null; then
+    SESSION_DATA=$(gtimeout 10 cat 2>/dev/null || echo "")
+  else
+    SESSION_DATA=$(cat 2>/dev/null || echo "")
+  fi
 fi
 
 if [ -z "$SESSION_DATA" ]; then
@@ -97,7 +104,7 @@ else
 fi
 
 # ── Call Claude Haiku to summarize ────────────────────────────────────────
-SUMMARY_RESP=$(curl -sf --max-time 30 \
+SUMMARY_RESP=$(curl -s --max-time 30 \
   -X POST "https://api.anthropic.com/v1/messages" \
   -H "x-api-key: ${ANTHROPIC_API_KEY}" \
   -H "anthropic-version: 2023-06-01" \
@@ -149,7 +156,7 @@ BLOCKS_JSON=$(jq -cn \
   }))')
 
 # ── Find or create draft callout on the draft page ────────────────────────
-PAGE_RESP=$(curl -sf --max-time 15 \
+PAGE_RESP=$(curl -s --max-time 15 \
   -H "Authorization: Bearer $NOTION_API_TOKEN" \
   -H "Notion-Version: $NOTION_VER" \
   "$NOTION_BASE/blocks/$DRAFT_PAGE_ID/children?page_size=100" 2>/dev/null) || true
@@ -170,7 +177,7 @@ DRAFT_CALLOUT_ID=$(echo "$PAGE_RESP" | jq -r '
 
 if [ -n "$DRAFT_CALLOUT_ID" ]; then
   # Append to existing draft callout
-  RESP=$(curl -sf --max-time 15 \
+  RESP=$(curl -s --max-time 15 \
     -X PATCH \
     -H "Authorization: Bearer $NOTION_API_TOKEN" \
     -H "Notion-Version: $NOTION_VER" \
@@ -178,8 +185,8 @@ if [ -n "$DRAFT_CALLOUT_ID" ]; then
     -d "{\"children\": $BLOCKS_JSON}" \
     "$NOTION_BASE/blocks/$DRAFT_CALLOUT_ID/children" 2>/dev/null) || true
 
-  if echo "$RESP" | jq -e '.object == "error"' >/dev/null 2>&1; then
-    log_err "Append failed: $(echo "$RESP" | jq -r '.message // "unknown"')"
+  if [ -z "$RESP" ] || echo "$RESP" | jq -e '.object == "error"' >/dev/null 2>&1; then
+    log_err "Append failed: $(echo "$RESP" | jq -r '.message // "network error"' 2>/dev/null)"
     exit 0
   fi
   log "Appended $BULLET_COUNT bullets to draft callout ($DRAFT_CALLOUT_ID)"
@@ -197,7 +204,7 @@ else
       }
     }]')
 
-  RESP=$(curl -sf --max-time 15 \
+  RESP=$(curl -s --max-time 15 \
     -X PATCH \
     -H "Authorization: Bearer $NOTION_API_TOKEN" \
     -H "Notion-Version: $NOTION_VER" \
@@ -205,8 +212,8 @@ else
     -d "{\"children\": $CALLOUT_JSON}" \
     "$NOTION_BASE/blocks/$DRAFT_PAGE_ID/children" 2>/dev/null) || true
 
-  if echo "$RESP" | jq -e '.object == "error"' >/dev/null 2>&1; then
-    log_err "Create callout failed: $(echo "$RESP" | jq -r '.message // "unknown"')"
+  if [ -z "$RESP" ] || echo "$RESP" | jq -e '.object == "error"' >/dev/null 2>&1; then
+    log_err "Create callout failed: $(echo "$RESP" | jq -r '.message // "network error"' 2>/dev/null)"
     exit 0
   fi
   log "Created draft callout with $BULLET_COUNT bullets"
