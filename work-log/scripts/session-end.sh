@@ -5,26 +5,37 @@
 
 set -euo pipefail
 
-# ── Config ──────────────────────────────────────────────────────────────────
+# ── Load user config ──────────────────────────────────────────────────────
+CONFIG_FILE="${HOME}/.config/work-log/config"
+[ -f "$CONFIG_FILE" ] && source "$CONFIG_FILE" 2>/dev/null || true
+
+# ── Config (env vars override config file) ────────────────────────────────
 NOTION_BASE="https://api.notion.com/v1"
 NOTION_VER="${NOTION_API_VERSION:-2022-06-28}"
-PAGE_ID="${NOTION_WORKLOG_PAGE_ID:-30942947-b59c-80f3-9e22-eed448e5862f}"
+PAGE_ID="${NOTION_WORKLOG_PAGE_ID:-}"
+SUMMARY_LANGUAGE="${WORK_LOG_SUMMARY_LANGUAGE:-zh}"
+SUMMARY_MODEL="${WORK_LOG_SUMMARY_MODEL:-claude-haiku-4-5-20251001}"
+MAX_CHARS="${WORK_LOG_MAX_TRANSCRIPT_CHARS:-6000}"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M')
 LOG_FILE="${HOME}/.claude/work-log.log"
 
-# ── Logging ──────────────────────────────────────────────────────────────────
+# ── Logging ───────────────────────────────────────────────────────────────
 log()     { printf '[work-log %s] %s\n' "$(date '+%H:%M:%S')" "$*" >> "$LOG_FILE" 2>/dev/null || true; }
 log_err() { log "ERROR: $*"; printf '[work-log] ERROR: %s\n' "$*" >&2 || true; }
 
 log "SessionEnd hook started"
 
-# ── Guard: required env vars ──────────────────────────────────────────────
+# ── Guard: required values ────────────────────────────────────────────────
 if [ -z "${NOTION_API_TOKEN:-}" ]; then
-  log_err "NOTION_API_TOKEN not set — skipping Notion sync."
+  log_err "NOTION_API_TOKEN not set — skipping Notion sync. Run setup.sh."
   exit 0
 fi
 if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-  log_err "ANTHROPIC_API_KEY not set — cannot summarize session."
+  log_err "ANTHROPIC_API_KEY not set — cannot summarize session. Run setup.sh."
+  exit 0
+fi
+if [ -z "$PAGE_ID" ]; then
+  log_err "NOTION_WORKLOG_PAGE_ID not set — run setup.sh to configure."
   exit 0
 fi
 
@@ -75,35 +86,33 @@ if [ -z "$MESSAGES" ] || [ "${#MESSAGES}" -lt 30 ]; then
   exit 0
 fi
 
-# Truncate to stay within token limits (~6000 chars)
-TRANSCRIPT="${MESSAGES:0:6000}"
+TRANSCRIPT="${MESSAGES:0:$MAX_CHARS}"
+log "Summarizing session (project: ${PROJECT:-unknown}, lang: $SUMMARY_LANGUAGE, chars: ${#TRANSCRIPT})"
 
-log "Summarizing session (project: ${PROJECT:-unknown}, transcript: ${#TRANSCRIPT} chars)"
+# ── Build summary prompt based on language config ─────────────────────────
+if [ "$SUMMARY_LANGUAGE" = "en" ]; then
+  SUMMARY_PROMPT="From the following Claude Code session transcript, extract 3-5 key work points.\nRules:\n1. Max 20 words per point\n2. English only\n3. Output ONLY a JSON string array, format: [\"point1\",\"point2\"]\n4. No other content\n\nProject: ${PROJECT:-unknown}\n\n${TRANSCRIPT}"
+else
+  SUMMARY_PROMPT="从以下Claude Code会话记录中，提炼3-5条最重要的工作要点。\n要求：\n1. 每条不超过25字\n2. 使用中文\n3. 只输出JSON字符串数组，格式：[\"要点1\",\"要点2\"]\n4. 不要输出任何其他内容\n\n项目：${PROJECT:-unknown}\n\n${TRANSCRIPT}"
+fi
 
-# ── Call Claude Haiku to generate summary bullets ─────────────────────────
+# ── Call Claude to summarize ──────────────────────────────────────────────
 SUMMARY_RESP=$(curl -sf --max-time 30 \
   -X POST "https://api.anthropic.com/v1/messages" \
   -H "x-api-key: ${ANTHROPIC_API_KEY}" \
   -H "anthropic-version: 2023-06-01" \
   -H "content-type: application/json" \
   -d "$(jq -cn \
-    --arg t "$TRANSCRIPT" \
-    --arg p "${PROJECT:-unknown}" \
-    '{
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 300,
-      messages: [{
-        role: "user",
-        content: ("从以下Claude Code会话记录中，提炼3-5条最重要的工作要点。\n要求：\n1. 每条不超过25字\n2. 使用中文\n3. 只输出JSON字符串数组，格式：[\"要点1\",\"要点2\"]\n4. 不要输出任何其他内容\n\n项目：" + $p + "\n\n" + $t)
-      }]
-    }')") 2>/dev/null || true
+    --arg model "$SUMMARY_MODEL" \
+    --arg prompt "$SUMMARY_PROMPT" \
+    '{model: $model, max_tokens: 300, messages: [{role: "user", content: $prompt}]}')" \
+  2>/dev/null) || true
 
 if [ -z "$SUMMARY_RESP" ]; then
   log_err "Claude API call failed or timed out."
   exit 0
 fi
 
-# Parse bullets from response
 BULLETS_RAW=$(echo "$SUMMARY_RESP" | jq -r '.content[0].text // ""' 2>/dev/null || echo "")
 BULLETS_JSON=$(echo "$BULLETS_RAW" | jq -c '. // []' 2>/dev/null || echo "[]")
 BULLET_COUNT=$(echo "$BULLETS_JSON" | jq 'length' 2>/dev/null || echo "0")
@@ -135,14 +144,11 @@ BLOCKS_JSON=$(jq -cn \
   ] + ($bullets | map({
     type: "bulleted_list_item",
     bulleted_list_item: {
-      rich_text: [{
-        type: "text",
-        text: {content: ("· " + .)}
-      }]
+      rich_text: [{type: "text", text: {content: ("· " + .)}}]
     }
   }))')
 
-# ── Find draft callout block on the Notion page ───────────────────────────
+# ── Find or create draft callout on the Notion page ───────────────────────
 PAGE_RESP=$(curl -sf --max-time 15 \
   -H "Authorization: Bearer $NOTION_API_TOKEN" \
   -H "Notion-Version: $NOTION_VER" \
@@ -163,7 +169,6 @@ DRAFT_ID=$(echo "$PAGE_RESP" | jq -r '
 ' 2>/dev/null || echo "")
 
 if [ -n "$DRAFT_ID" ]; then
-  # Append to existing draft callout
   RESP=$(curl -sf --max-time 15 \
     -X PATCH \
     -H "Authorization: Bearer $NOTION_API_TOKEN" \
@@ -178,7 +183,6 @@ if [ -n "$DRAFT_ID" ]; then
   fi
   log "Appended $BULLET_COUNT bullets to draft callout ($DRAFT_ID)"
 else
-  # No draft callout found — create one at the bottom of the page
   CALLOUT_JSON=$(jq -cn \
     --argjson children "$BLOCKS_JSON" \
     '[{
