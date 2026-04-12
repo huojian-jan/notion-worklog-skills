@@ -13,10 +13,13 @@ All notable changes to the `work-log` skill are documented here.
 - **Dual install instructions in README**: separate quick-start commands for local mode vs. Notion mode
 
 ### Changed
+- Notion draft mode is now faster and more reliable — summarization and Notion API calls are separated, so a slow AI response no longer delays the hook
+- Session drafts are now safe for project directories with special characters in their names
+
+### For contributors
 - `session-end.sh` rewritten from bash to zsh (required for `source ~/.zshrc`)
-- Notion mode now uses `claude --print` for summarization only, then executes `curl` directly — removes dependency on background `claude --print` subshell for network calls
-- Session header JSON now built via `jq` to safely handle project names with special characters
-- SKILL.md updated with `DRAFT_PAGE_ID` configuration and `--clear` flag parsing
+- Session header JSON built via `jq -Rs` instead of raw interpolation
+- SKILL.md: added `DRAFT_PAGE_ID` variable and `--clear` flag parsing
 
 ### Fixed
 - `timeout 10 cat` → `cat`: macOS has no GNU `timeout`, causing sessions to be silently dropped
