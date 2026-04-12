@@ -181,7 +181,8 @@ ${TRANSCRIPT}" 2>/dev/null || echo "")
   done <<< "$BULLETS"
   BULLET_BLOCKS="${BULLET_BLOCKS%,}"
 
-  SESSION_HEADER="{\"type\":\"paragraph\",\"paragraph\":{\"rich_text\":[{\"type\":\"text\",\"text\":{\"content\":\"· [${TIME}] ${PROJECT}\"},\"annotations\":{\"bold\":true}}]}}"
+  SESSION_CONTENT=$(printf '· [%s] %s' "$TIME" "$PROJECT" | jq -Rs '.')
+  SESSION_HEADER="{\"type\":\"paragraph\",\"paragraph\":{\"rich_text\":[{\"type\":\"text\",\"text\":{\"content\":${SESSION_CONTENT}},\"annotations\":{\"bold\":true}}]}}"
 
   EXPECTED_DATE_HEADER="── ${DATE} ──"
   if [ "$LAST_DATE" != "$EXPECTED_DATE_HEADER" ]; then
