@@ -25,23 +25,48 @@ DRAFT_TARGET="${WORK_LOG_DRAFT_TARGET:-local}"
 MIN_MESSAGES="${WORK_LOG_MIN_MESSAGES:-5}"
 DRAFTS_DIR="${WORK_LOG_DRAFTS_DIR:-$HOME/.claude/work-log-drafts}"
 
-# ── Read session data ─────────────────────────────────────────────────────────
-SESSION_DATA=""
+# ── Read hook event data from stdin ──────────────────────────────────────────
+HOOK_DATA=""
 if [ ! -t 0 ]; then
-  SESSION_DATA=$(cat 2>/dev/null || echo "")
+  HOOK_DATA=$(cat 2>/dev/null || echo "")
 fi
 
-if [ -z "$SESSION_DATA" ]; then
-  log "No session data — skipping."
+if [ -z "$HOOK_DATA" ]; then
+  log "No hook data — skipping."
   exit 0
 fi
 
-# ── Filter: skip short sessions ───────────────────────────────────────────────
-MSG_COUNT=$(echo "$SESSION_DATA" | jq '
-  [(.transcript // .messages // [])[] |
-    select((.role // .type // "") | test("human|user"; "i"))
-  ] | length
-' 2>/dev/null || echo "0")
+# ── Resolve transcript file path ─────────────────────────────────────────────
+# Claude Code passes {session_id, transcript_path, cwd, hook_event_name, reason}
+TRANSCRIPT_PATH=$(echo "$HOOK_DATA" | jq -r '.transcript_path // ""' 2>/dev/null || echo "")
+
+if [ -z "$TRANSCRIPT_PATH" ] || [ ! -f "$TRANSCRIPT_PATH" ]; then
+  log "No transcript file found (path: ${TRANSCRIPT_PATH:-empty}) — skipping."
+  exit 0
+fi
+
+log "Transcript file: $TRANSCRIPT_PATH ($(wc -l < "$TRANSCRIPT_PATH" | tr -d ' ') lines)"
+
+# ── Extract metadata from hook data ──────────────────────────────────────────
+PROJECT=$(echo "$HOOK_DATA" | jq -r '
+  (.cwd // "") |
+  if . != "" then split("/") | last else "unknown" end
+' 2>/dev/null || echo "unknown")
+
+TIMESTAMP=$(date '+%Y-%m-%d %H:%M')
+DATE=$(date '+%Y-%m-%d')
+TIME=$(date '+%H:%M')
+
+# ── Count user messages (real human input, not tool results) ─────────────────
+# Transcript JSONL: each line has .type field. User messages have type="user"
+# and .message is an object like {role:"user", content:"actual text"}.
+# We only count messages where content is a string (real user input),
+# not arrays (which are tool_result responses).
+MSG_COUNT=$(jq -r '
+  select(.type == "user") |
+  select(.message.content | type == "string") |
+  .message.content
+' "$TRANSCRIPT_PATH" 2>/dev/null | wc -l | tr -d ' ')
 
 log "User messages: $MSG_COUNT (min: $MIN_MESSAGES, target: $DRAFT_TARGET)"
 
@@ -50,32 +75,27 @@ if [ "$MSG_COUNT" -lt "$MIN_MESSAGES" ]; then
   exit 0
 fi
 
-# ── Extract metadata ──────────────────────────────────────────────────────────
-PROJECT=$(echo "$SESSION_DATA" | jq -r '
-  (.project_path // .cwd // "") |
-  if . != "" then split("/") | last else "unknown" end
-' 2>/dev/null || echo "unknown")
-
-TIMESTAMP=$(date '+%Y-%m-%d %H:%M')
-DATE=$(date '+%Y-%m-%d')
-TIME=$(date '+%H:%M')
-
-TRANSCRIPT=$(echo "$SESSION_DATA" | jq -r '
-  (.transcript // .messages // []) |
-  .[-30:] |
-  map(
-    ((.role // .type // "?") | ascii_downcase) + ": " +
-    (
-      if   (.content | type) == "string" then .content
-      elif (.content | type) == "array"  then
-        [.content[] | if type == "object" then (.text // "") else "" end] | join(" ")
-      else ""
-      end
-    )
-  ) |
-  map(select(length > 5)) |
-  join("\n")
-' 2>/dev/null || echo "")
+# ── Build transcript text from user+assistant messages ───────────────────────
+TRANSCRIPT=$(jq -r '
+  select(.type == "user" or .type == "assistant") |
+  if .type == "user" then
+    if (.message.content | type) == "string" then
+      "user: " + .message.content
+    else
+      empty
+    end
+  elif .type == "assistant" then
+    if (.message.content | type) == "string" then
+      "assistant: " + .message.content
+    elif (.message.content | type) == "array" then
+      "assistant: " + ([.message.content[] | select(.type == "text") | .text] | join(" "))
+    else
+      empty
+    end
+  else
+    empty
+  end
+' "$TRANSCRIPT_PATH" 2>/dev/null | tail -60)
 
 TRANSCRIPT="${TRANSCRIPT:0:5000}"
 
@@ -181,8 +201,7 @@ ${TRANSCRIPT}" 2>/dev/null || echo "")
   done <<< "$BULLETS"
   BULLET_BLOCKS="${BULLET_BLOCKS%,}"
 
-  SESSION_CONTENT=$(printf '· [%s] %s' "$TIME" "$PROJECT" | jq -Rs '.')
-  SESSION_HEADER="{\"type\":\"paragraph\",\"paragraph\":{\"rich_text\":[{\"type\":\"text\",\"text\":{\"content\":${SESSION_CONTENT}},\"annotations\":{\"bold\":true}}]}}"
+  SESSION_HEADER="{\"type\":\"paragraph\",\"paragraph\":{\"rich_text\":[{\"type\":\"text\",\"text\":{\"content\":\"· [${TIME}] ${PROJECT}\"},\"annotations\":{\"bold\":true}}]}}"
 
   EXPECTED_DATE_HEADER="── ${DATE} ──"
   if [ "$LAST_DATE" != "$EXPECTED_DATE_HEADER" ]; then
