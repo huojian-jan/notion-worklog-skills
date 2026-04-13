@@ -30,7 +30,7 @@ Check user input after `/save-draft`:
 Search `$PROJECTS_DIR` for `.jsonl` transcript files (exclude `subagents/` subdirectories).
 
 For each file, quickly check:
-1. Modification date matches the target date filter
+1. Modification date matches the target date filter. Use `stat -f '%Sm' -t '%Y-%m-%d'` to get the file's date and compare it strictly against the target date string. **Do NOT use `find -newermt`** as it only checks "newer than" and cannot enforce "same day only".
 2. It has at least `$MIN_MESSAGES` real user messages (lines with `type=="user"` and `.message.content` is a string)
 3. **DEDUP (REQUIRED):** It has NOT already been saved. Before scanning, build a set of already-saved source paths:
 
@@ -63,10 +63,10 @@ Display a numbered table:
 ```
 Found N unprocessed session(s):
 
- #  | Time  | Project       | Messages | Preview
- 1  | 09:25 | sync-win      | 22       | 帮我看一下我的work-log...
- 2  | 13:32 | blog-source   | 8        | 更新博客的部署配置...
- 3  | 16:47 | my-skills     | 3        | 帮我看一下我的work-log...
+ #  | Date & Time       | Project       | Messages | Preview
+ 1  | 2026-04-13 09:25  | sync-win      | 22       | 帮我看一下我的work-log...
+ 2  | 2026-04-13 13:32  | blog-source   | 8        | 更新博客的部署配置...
+ 3  | 2026-04-13 16:47  | my-skills     | 3        | 帮我看一下我的work-log...
 
 Save all? Or specify numbers (e.g. "1,3" or "all")
 ```
