@@ -32,13 +32,22 @@ Search `$PROJECTS_DIR` for `.jsonl` transcript files (exclude `subagents/` subdi
 For each file, quickly check:
 1. Modification date matches the target date filter
 2. It has at least `$MIN_MESSAGES` real user messages (lines with `type=="user"` and `.message.content` is a string)
-3. It has NOT already been saved (check if a draft entry with the same session filename already exists in `$DRAFTS_DIR`)
+3. **DEDUP (REQUIRED):** It has NOT already been saved. Before scanning, build a set of already-saved source paths:
 
-To check if already saved:
 ```bash
-FILENAME=$(basename "$TRANSCRIPT_PATH")
-grep -l "$FILENAME" "$DRAFTS_DIR"/*.jsonl 2>/dev/null
+SAVED_SOURCES=$(cat "$DRAFTS_DIR"/*.jsonl 2>/dev/null | jq -r '.source // empty' | sort -u)
 ```
+
+Then for each candidate file, skip it if its path appears in `$SAVED_SOURCES`:
+
+```bash
+if echo "$SAVED_SOURCES" | grep -qF "$TRANSCRIPT_PATH"; then
+  # Already saved — skip
+  continue
+fi
+```
+
+This prevents duplicate entries even if `/save-draft` is run multiple times. The `.source` field in each draft entry stores the original transcript file path for this check.
 
 Build a list of eligible sessions with:
 - File path
