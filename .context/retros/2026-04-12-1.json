@@ -1,0 +1,47 @@
+{
+  "date": "2026-04-12",
+  "window": "7d",
+  "metrics": {
+    "commits": 14,
+    "contributors": 1,
+    "prs_merged": 0,
+    "insertions": 2722,
+    "deletions": 1509,
+    "net_loc": 1213,
+    "test_loc": 0,
+    "test_ratio": 0.0,
+    "active_days": 1,
+    "sessions": 1,
+    "deep_sessions": 1,
+    "avg_session_minutes": 116,
+    "loc_per_session_hour": 650,
+    "feat_pct": 0.43,
+    "fix_pct": 0.29,
+    "docs_pct": 0.21,
+    "peak_hour": 10,
+    "ai_assisted_commits": 13,
+    "ai_assisted_pct": 0.93
+  },
+  "authors": {
+    "yasenRK": {
+      "commits": 14,
+      "insertions": 2722,
+      "deletions": 1509,
+      "test_ratio": 0.0,
+      "top_area": "work-log/scripts/"
+    }
+  },
+  "version_range": ["1.0.0", "1.2.0"],
+  "streak_days": 1,
+  "tweetable": "Apr 12: 14 commits, +2.7k/-1.5k LOC, v1.0→v1.2 in one 116-min session | 93% AI-assisted | Streak: 1d (new repo)",
+  "hotspots": {
+    "work-log/scripts/session-end.sh": 9,
+    "README.md": 9,
+    "work-log/setup.sh": 7,
+    "work-log/SKILL.md": 7
+  },
+  "skill_usage": {
+    "qa": 1,
+    "ship": 1
+  }
+}
